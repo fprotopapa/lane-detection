@@ -1,9 +1,13 @@
 # Ignore input files
 input_video/
-# Ignore literature etc.
+input_image/
+
+# Stuff to ignore
 ignore/
-# Ignore virtual enviroment
-venv/
+
+# IDE
+.idea/
+.vscode/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
