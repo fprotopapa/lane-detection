@@ -39,6 +39,12 @@ def print_version_information():
 
 
 #
+# Calculate passed time between two operations per frame
+def get_passed_time(start_tick, end_tick, frames=1):
+    return ((end_tick - start_tick) / cv2.getTickFrequency()) / frames
+
+
+#
 # Get list of media input files
 def get_list_of_input_files(folder_name, file_ext="mp4"):
     return sorted(glob.glob(os.path.join(os.path.join(os.getcwd(), folder_name), "*." + file_ext)))
