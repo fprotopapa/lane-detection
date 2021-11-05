@@ -55,13 +55,14 @@ def get_image_information(image, filename):
 
 #
 # Perform Edge detection with Sobel filter
-def get_sobel_edge_detection(frame):
+def apply_sobel_edge_detection(frame):
     # For x direction
-    sobel_x = np.absolute(cv2.Sobel(frame, cv2.CV_64F, 1, 0, 3))
+    sobel_x = cv2.Sobel(frame, cv2.CV_64F, 1, 0)
     # For y direction
-    sobel_y = np.absolute(cv2.Sobel(frame, cv2.CV_64F, 0, 1, 3))
+    sobel_y = cv2.Sobel(frame, cv2.CV_64F, 0, 1)
     # Calculate filtered matrix
-    return np.sqrt(sobel_x ** 2 + sobel_y ** 2)
+    grad = np.sqrt(sobel_x ** 2 + sobel_y ** 2)
+    return (grad * 255 / grad.max()).astype(np.uint8)
 
 
 def __get_top_avg_val(image, width, height):

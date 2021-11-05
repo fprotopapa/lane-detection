@@ -77,7 +77,7 @@ def main():
                 # Blur image
                 binary_frame = cv2.GaussianBlur(binary_frame, (3, 3), 0)
                 # Detect edges
-                edge_frame = det.get_sobel_edge_detection(binary_frame)
+                edge_frame = det.apply_sobel_edge_detection(binary_frame)
 
                 # Mask image
                 # ToDo calculate mean of street in front of car
