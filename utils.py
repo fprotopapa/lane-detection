@@ -16,6 +16,7 @@ import platform
 
 #
 import cv2
+import matplotlib.pyplot as plt
 
 
 #
@@ -55,3 +56,33 @@ def get_list_of_input_files(folder_name, file_ext="mp4"):
 def get_filename(path):
     _, filename = os.path.split(path)
     return filename
+
+
+#
+# Show images with pyplot
+def show_images(images, cmap=None, channels=False):
+    fig_size = (16, 12)
+    plt.figure(figsize=fig_size)
+    if channels:
+        cols = 3
+        rows = len(images)
+        off = 0
+        for indx, image in enumerate(images):
+            indx += off
+            for j in range(0, 3):
+                plt.subplot(rows, cols, indx + 1 + j)
+                plt.imshow(image[:, :, j], cmap='gray')
+                plt.axis('off')
+            off += 2
+    else:
+        cols = 2
+        rows = (len(images) + 1) // cols
+        for i, image in enumerate(images):
+            plt.subplot(rows, cols, i + 1)
+            cmap = 'gray' if len(image.shape) == 2 else cmap
+            if cmap == 'bgr':
+                plt.imshow(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), cmap=None)
+            else:
+                plt.imshow(image, cmap=cmap)
+    plt.tight_layout()
+    plt.show()
