@@ -15,7 +15,7 @@ import cv2
 #
 import numpy as np
 
-import lane_detection as det
+import lane_detection
 import utils
 
 #
@@ -45,7 +45,8 @@ def main():
         if not cap.isOpened():
             print("Error opening file {}".format(vid))
         filename = utils.get_filename(vid)
-        width, height = det.get_video_information(cap, filename)
+        detector = lane_detection.LaneDetection(cap)
+        detector.get_video_information(filename)
         # Enter video processing
         processed_frames = 0
         start_tick_vid = cv2.getTickCount()
@@ -57,27 +58,29 @@ def main():
                 #
                 # Lane Detection
                 #
+                detector.set_next_frame(bgr_frame)
                 # Convert to HLS
-                hls_frame = cv2.cvtColor(bgr_frame, cv2.COLOR_BGR2HLS)
+                hls_frame = detector.bgr_to_hls(bgr_frame)
+                #print(np.mean(hls_frame[:, :, 1]))
+                #hls_frame[:,:,1] = np.where(hls_frame[:, :, 1] < 125, 120, 0)
                 # Reduce image
                 # Mask 10% of bottom
-                det.set_bottom_roi(hls_frame, height)
+                detector.set_bottom_roi(hls_frame)
                 #bgr_frame[int(height * 0.9):, :, :] = (0, 0, 0)
                 # Mask top
-                offset = det.set_top_roi(hls_frame, bgr_frame, width, height)
-                top_roi_arr[roi_indx] = offset
+                #offset = detector.set_top_roi(hls_frame, bgr_frame)
+                #top_roi_arr[roi_indx] = offset
                 roi_indx += 1
                 if roi_indx > 99:
                     roi_indx = 0
-                hls_frame[:int(height * np.mean(top_roi_arr)), :, :] = (0, 0, 0)
-                #bgr_frame[:int(height / 2), :, :] = (0, 0, 0)
-
-                # Convert to binary
-                _, binary_frame = cv2.threshold(hls_frame[:, :, 2], 110, 255, cv2.THRESH_BINARY)
-                # Blur image
-                binary_frame = cv2.GaussianBlur(binary_frame, (3, 3), 0)
-                # Detect edges
-                edge_frame = det.apply_sobel_edge_detection(binary_frame)
+                #hls_frame[:int(detector.height * np.mean(top_roi_arr)), :, :] = (0, 0, 0)
+                # Edge detection
+                edge_frame = detector.apply_gaussian_blur(hls_frame, (15, 15))
+                edge_frame = detector.apply_sobel_edge_detection(edge_frame)
+                # Use lightness and saturation channels for detecting lanes
+                rs_binary = detector.create_binary_lane_mask(hls_frame)
+                # Edge Saturation channel and rs binary image
+                lines = detector.create_binary_image(rs_binary, edge_frame[:, :, 2].astype(np.uint8))
 
                 # Mask image
                 # ToDo calculate mean of street in front of car
@@ -86,9 +89,9 @@ def main():
 
                 # Display results
                 processed_frames += 1
-                cv2.imshow("original_id", hls_frame)
+                cv2.imshow("original_id", bgr_frame)
                 cv2.setWindowTitle("original_id", filename)
-                cv2.imshow("lanes_id", edge_frame)
+                cv2.imshow("lanes_id", lines)
                 cv2.setWindowTitle("lanes_id", filename)
                 # 'ESC' to skip to next file and 'q' to end application
                 pressed_key = cv2.waitKey(1) & 0xFF
