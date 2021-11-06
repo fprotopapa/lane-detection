@@ -1,6 +1,7 @@
 # Ignore input files
 input_video/
 input_image/
+test_images/
 
 # Stuff to ignore
 ignore/
