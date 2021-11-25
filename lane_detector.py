@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 
 
-class LaneDetection:
+class LaneDetector:
     def __init__(self, file, is_video=True):
         self.filename = None
         self.is_video = is_video
