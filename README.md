@@ -19,8 +19,13 @@ Run code:
 ```
 conda create --name venv python=3.8
 conda activate venv
-python lane_detection.py 
+python detect_lanes.py 
 conda deactivate
+```
+
+```
+# Generates necessary data for camera calibration
+python lane_detection\calibrate_camera.py
 ```
 
 ## Datasets
