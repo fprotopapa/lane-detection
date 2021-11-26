@@ -48,7 +48,7 @@ def get_passed_time(start_tick, end_tick, frames=1):
 #
 # Get list of media input files
 def get_list_of_input_files(folder_name, file_ext="mp4"):
-    return sorted(glob.glob(os.path.join(os.path.join(os.getcwd(), folder_name), "*." + file_ext)))
+    return glob.glob(os.path.join(os.path.join(os.getcwd(), folder_name), "*." + file_ext))
 
 
 #
@@ -57,6 +57,23 @@ def get_filename(path):
     _, filename = os.path.split(path)
     return filename
 
+def imshow_images(images, names=None):
+    if names is None or type(names) is not list:
+        if type(images) is list:
+            names = ['img'+str(num) for num in range(len(images))]
+        else:
+            if names is None: 
+                names = 'img'
+            cv2.imshow(names, images)
+            cv2.waitKey(0)
+            return
+    for image, name in zip(images, names):
+        cv2.imshow(name, image)
+    cv2.waitKey(0)
+
+
+def close_windows():
+    cv2.destroyAllWindows()
 
 #
 # Show images with pyplot
@@ -86,3 +103,9 @@ def show_images(images, cmap=None, channels=False):
                 plt.imshow(image, cmap=cmap)
     plt.tight_layout()
     plt.show()
+
+ 
+def show_hls_channels(self, hls_frame):
+    cv2.imshow('hue', hls_frame[:, :, 0])
+    cv2.imshow('lightness', hls_frame[:, :, 1])
+    cv2.imshow('saturation', hls_frame[:, :, 2])
