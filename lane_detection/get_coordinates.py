@@ -16,29 +16,35 @@ import numpy as np
 coordinates = []
 
 def set_polygon(image):
-    print("Left click to select point, click 'r' to restart selection, 'q' to quit.")
+    print("Left click to select point, click 'r' to restart selection, 's' to save and exit.")
     print("left_bottom, left_top, right_top, right_bottom")
+    coordinates.clear()
     roi_image = image.copy()
     # setting mouse handler for the image
     # and calling the click_event() function
-    window_name = 'setPolygon r:reset q:quit'
+    window_name = 'setPolygon r:reset s:save'
     cv2.namedWindow(window_name)
     cv2.setMouseCallback(window_name, click_event, roi_image)
     #cv2.imshow(window_name,image)
     while(True):
         cv2.imshow(window_name, roi_image)
-        key = cv2.waitKey(1) & 0xFF
+        key = cv2.waitKey(1) & 0xFF 
         if key == ord("r"):
             roi_image = image.copy()
             cv2.setMouseCallback(window_name, click_event, roi_image)
             coordinates.clear()
             print("Clear selection.")
             print("left_bottom, left_top, right_top, right_bottom")
-        elif key == ord("q"):
+        elif key == ord("s"):
             if len(coordinates) >= 4:
                 break
             else:
                 print('First select four points.')
+        # Debug
+        elif key == ord("q"):
+            coordinates.clear()
+            coordinates.extend([(360, 630), (568, 499), (847, 494), (1017, 623)])
+            break
         # Draw ROI
         num_points = len(coordinates)
         if num_points == 2:
