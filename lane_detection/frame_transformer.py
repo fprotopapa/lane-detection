@@ -113,8 +113,14 @@ class FrameTransformer:
         
         # Warp the image
         warped = cv2.warpPerspective(image, M, img_size, flags=cv2.WARP_FILL_OUTLIERS+cv2.INTER_CUBIC)
-        return np.copy(warped)
+        return np.copy(warped), M, minv
 
+    @staticmethod
+    def untransform_image(image, minv):      
+        img_size = (image.shape[1], image.shape[0]) 
+        # Unwarp the image
+        unwarped = cv2.warpPerspective(image, minv, img_size, flags=cv2.WARP_FILL_OUTLIERS+cv2.INTER_CUBIC)
+        return np.copy(unwarped)
 
 def main():
     import utils
