@@ -20,6 +20,7 @@ import os
 import lane_detection.utils as utils
 import lane_detection.frame_transformer as ftf
 import lane_detection.lane_detector as det
+import lane_detection.config as cfg
 from lane_detection.get_coordinates import set_polygon
 
 #
@@ -70,7 +71,7 @@ def process_video(vid_files, mtx, dist, Ftf):
             print("Error opening file {}".format(vid))
         filename = utils.get_filename(vid)
         # Reset selected vertices
-        detector.set_vertices(None)
+        Detector.set_vertices(None)
         # Check video orientation
         if cap.get(cv2.CAP_PROP_FRAME_WIDTH) != width:
             flip = True
@@ -142,24 +143,26 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     # Lane Detection
     #
     # Distort frame
-    undist_frame = Ftf.undistort_image(bgr_frame, mtx, dist)
+    if is_calibration:
+        undist_frame = Ftf.undistort_image(bgr_frame, mtx, dist)
+    else:
+        undist_frame = bgr_frame
     # Select ROI
     if is_man_roi:
-        if is_video and detector.vertices is None:
+        if is_video and Detector.vertices is None:
             vertices = set_polygon(undist_frame)
-            detector.set_vertices(vertices)
-        elif is_video and detector.vertices is not None:
-            vertices = detector.vertices
+            Detector.set_vertices(vertices)
+        elif is_video and Detector.vertices is not None:
+            vertices = Detector.vertices
         else:
             vertices = set_polygon(undist_frame)
     else:
-        vertices = [(360, 630), (568, 499), (847, 494), (1017, 623)]
+        vertices = cfg.default_vertices
     vert_poly = np.array([[vertices[0], vertices[1], vertices[2], vertices[3]]], dtype=np.int32)
     vert_trans = np.array([[vertices[1], vertices[0], vertices[2], vertices[3]]], dtype=np.float32)
-    #print(vertices)
     # Generate ROI on frame and tranform to Bird-Eye view
     roi_frame = Ftf.region_of_interest(undist_frame, vert_poly)
-    trans_frame = Ftf.transform_image(roi_frame, vert_trans)
+    trans_frame, M, minv = Ftf.transform_image(roi_frame, vert_trans)
     # ToDO: Adjust from threshold
     bright_frame = Ftf.adjust_image(trans_frame, 1.1)
     # Convert color space
@@ -170,23 +173,30 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     canny_frame = Ftf.apply_canny_edge_det(blur_frame)
     sobel_frame = Ftf.apply_sobel_edge_det(blur_frame)
     # White color mask
-    lower = np.uint8([0, 210, 0])
-    upper = np.uint8([255, 255, 255])
+    lower = np.uint8(cfg.white_lower)
+    upper = np.uint8(cfg.white_upper)
     white_mask = Ftf.create_mask(hls_frame, (lower, upper))
     # Yellow color mask
-    lower = np.uint8([10, 0, 110])
-    upper = np.uint8([40, 255, 255])
+    lower = np.uint8(cfg.yellow_lower)
+    upper = np.uint8(cfg.yellow_upper)
     yellow_mask = Ftf.create_mask(hls_frame, (lower, upper))
     # Combine the mask
     comb_mask = Ftf.combine_mask(white_mask, yellow_mask)
     intersect = Ftf.intersect_mask(comb_mask, sobel_frame)
+    # ToDo average       
+    # Draw lanes
+    lanes = Detector.find_lanes(intersect)
+    # Return from Bird-eye view to normal view
+    unwarp = Ftf.untransform_image(lanes, minv)
+    # Overlay drawings on bgr frame
+    result = cv2.addWeighted(bgr_frame, 1, unwarp, 1, 0)
     # Display results
-    cv2.imshow("original", bgr_frame)
-    cv2.setWindowTitle("original", filename)
-    cv2.imshow("intersect", intersect)
-    cv2.setWindowTitle("intersect", filename)
-    # ToDo
-    # histogram, search peaks, sliding window, threshold, curve fitting, draw, output
+    #cv2.imshow("original", bgr_frame)
+    #cv2.imshow("intersect", intersect)
+    #cv2.imshow("lanes", unwarp)
+    cv2.imshow("result", result)
+    cv2.setWindowTitle("result", filename)
+
 
 
 #
@@ -256,8 +266,23 @@ if __name__ == "__main__":
         image_folder_name = 'input_image'
         if args.format is not None:
             image_file_format = args.format
-
+    
     calibration_data_path = os.path.join('lane_detection', 'calibration_data', "calibration.p")
-    detector = det.LaneDetector(is_video=is_video)
-
+    # Object for finding and drawing lanes
+    Detector = det.LaneDetector(is_video=is_video)
+    # Drawing
+    Detector.draw_area = cfg.draw_area
+    Detector.lane_color = cfg.lane_color
+    Detector.lane_thickness = cfg.lane_thickness
+    Detector.road_color = cfg.road_color
+    # Default ROI
+    Detector.set_vertices(cfg.default_vertices)
+    # Frame dimensions
+    Detector.width = cfg.width
+    Detector.height = cfg.height
+    # Sliding window
+    Detector.n_windows = cfg.n_windows
+    Detector.margin = cfg.margin
+    Detector.px_threshold = cfg.px_threshold
+    # Start process
     main()
