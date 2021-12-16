@@ -144,7 +144,7 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     #
     # Distort frame
     if is_calibration:
-        undist_frame = Ftf.undistort_image(bgr_frame, mtx, dist)
+        undist_frame = Ftf.undistort_frame(bgr_frame, mtx, dist)
     else:
         undist_frame = bgr_frame
     # Select ROI
@@ -162,9 +162,9 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     vert_trans = np.array([[vertices[1], vertices[0], vertices[2], vertices[3]]], dtype=np.float32)
     # Generate ROI on frame and tranform to Bird-Eye view
     roi_frame = Ftf.region_of_interest(undist_frame, vert_poly)
-    trans_frame, M, minv = Ftf.transform_image(roi_frame, vert_trans)
+    trans_frame, M, minv = Ftf.transform_frame(roi_frame, vert_trans)
     # ToDO: Adjust from threshold
-    bright_frame = Ftf.adjust_image(trans_frame, 1.1)
+    bright_frame = Ftf.adjust_frame(trans_frame, 1.1)
     # Convert color space
     hls_frame = Ftf.bgr_to_x(bright_frame, 'hls')
     gray_frame= Ftf.bgr_to_x(trans_frame, 'gray')
@@ -187,7 +187,7 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     # Draw lanes
     lanes = Detector.find_lanes(intersect)
     # Return from Bird-eye view to normal view
-    unwarp = Ftf.untransform_image(lanes, minv)
+    unwarp = Ftf.untransform_frame(lanes, minv)
     # Overlay drawings on bgr frame
     result = cv2.addWeighted(bgr_frame, 1, unwarp, 1, 0)
     # Display results
@@ -266,7 +266,7 @@ if __name__ == "__main__":
         image_folder_name = 'input_image'
         if args.format is not None:
             image_file_format = args.format
-    
+
     calibration_data_path = os.path.join('lane_detection', 'calibration_data', "calibration.p")
     # Object for finding and drawing lanes
     Detector = det.LaneDetector(is_video=is_video)

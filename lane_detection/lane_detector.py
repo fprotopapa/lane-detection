@@ -151,3 +151,11 @@ class LaneDetector:
             self.draw_area_err = True
         return frame_3channel
 
+def main():
+    print("No main.")
+
+
+#
+# Run as script
+if __name__ == "__main__":
+    main()
