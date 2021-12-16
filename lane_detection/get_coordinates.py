@@ -14,10 +14,17 @@ import cv2
 import numpy as np
 
 coordinates = []
+ix = -1
+iy = -1
+drawing = False
 
-def set_polygon(image):
+def set_polygon(image, lines=True):
     print("Left click to select point, click 'r' to restart selection, 's' to save and exit.")
     print("left_bottom, left_top, right_top, right_bottom")
+    if lines:
+        click_event = click_event_lines
+    else:
+        click_event = click_event_rectangle
     coordinates.clear()
     roi_image = image.copy()
     # setting mouse handler for the image
@@ -45,20 +52,21 @@ def set_polygon(image):
             coordinates.clear()
             coordinates.extend([(360, 630), (568, 499), (847, 494), (1017, 623)])
             break
+        if lines:
         # Draw ROI
-        num_points = len(coordinates)
-        if num_points == 2:
-            cv2.circle(roi_image, coordinates[1], radius=1, color=(255, 0, 0), thickness=-1)
-            cv2.line(roi_image, coordinates[0], coordinates[1], color=(255, 0, 0), thickness=1)
-        elif num_points == 3:
-            cv2.circle(roi_image, coordinates[2], radius=1, color=(255, 0, 0), thickness=-1)
-            cv2.line(roi_image, coordinates[1], coordinates[2], color=(255, 0, 0), thickness=1)
-        elif num_points == 4:
-            cv2.circle(roi_image, coordinates[3], radius=1, color=(255, 0, 0), thickness=-1)
-            cv2.line(roi_image, coordinates[2], coordinates[3], color=(255, 0, 0), thickness=1)
-            cv2.line(roi_image, coordinates[3], coordinates[0], color=(255, 0, 0), thickness=1)
-        elif num_points == 1:
-            cv2.circle(roi_image, coordinates[0], radius=1, color=(255, 0, 0), thickness=-1)
+            num_points = len(coordinates)
+            if num_points == 2:
+                cv2.circle(roi_image, coordinates[1], radius=1, color=(255, 0, 0), thickness=3)
+                cv2.line(roi_image, coordinates[0], coordinates[1], color=(255, 0, 0), thickness=2)
+            elif num_points == 3:
+                cv2.circle(roi_image, coordinates[2], radius=1, color=(255, 0, 0), thickness=3)
+                cv2.line(roi_image, coordinates[1], coordinates[2], color=(255, 0, 0), thickness=2)
+            elif num_points == 4:
+                cv2.circle(roi_image, coordinates[3], radius=1, color=(255, 0, 0), thickness=3)
+                cv2.line(roi_image, coordinates[2], coordinates[3], color=(255, 0, 0), thickness=2)
+                cv2.line(roi_image, coordinates[3], coordinates[0], color=(255, 0, 0), thickness=2)
+            elif num_points == 1:
+                cv2.circle(roi_image, coordinates[0], radius=1, color=(255, 0, 0), thickness=3)
 
     cv2.destroyAllWindows()
     return [coordinates[0], coordinates[1], coordinates[2], coordinates[3]]
@@ -66,14 +74,41 @@ def set_polygon(image):
 
 # function to display the coordinates of
 # of the points clicked on the image
-def click_event(event, x, y, flags, image):
+def click_event_rectangle(event, x, y, flags, image):
+    global ix, iy, drawing
+    # left_bottom, left_top, right_top, right_bottom
+    # checking for left mouse clicks
+    if event == cv2.EVENT_LBUTTONDOWN:
+        drawing = True
+        ix = x
+        iy = y
+        # Bottom left
+        coordinates.append((ix, iy))
+
+    elif event == cv2.EVENT_MOUSEMOVE:
+        if drawing == True:
+            cv2.rectangle(image, pt1=(ix,iy), pt2=(x, y),color=(255, 0, 0),thickness=-1)
+
+    elif event == cv2.EVENT_LBUTTONUP:
+        drawing = False
+        cv2.rectangle(image, pt1=(ix,iy), pt2=(x, y),color=(255, 0, 0),thickness=-1)
+        # Top left
+        coordinates.append((x, iy))
+        # Top right
+        coordinates.append((x, y))
+        # Bottom right
+        coordinates.append((ix, y))
+
+
+# function to display the coordinates of
+# of the points clicked on the image
+def click_event_lines(event, x, y, flags, image):
     # left_bottom, left_top, right_top, right_bottom
     # checking for left mouse clicks
     if event == cv2.EVENT_LBUTTONDOWN:
         print('col: {}, row: {}'.format(x, y))
         # Save points
-        coordinates.append((x, y))
-        
+        coordinates.append((x, y))        
 
 # Run as script
 if __name__=="__main__":
