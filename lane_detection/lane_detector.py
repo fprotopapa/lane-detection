@@ -12,29 +12,60 @@
 # Import libraries
 import cv2
 import numpy as np
-
+import math
+from collections import deque 
 
 class LaneDetector:
     def __init__(self, is_video=False, width=1280, height=720, draw_area = True):
+        # Roi
         self.vertices = None
+        # Video pipline
         self.is_video = is_video
+        # Frame dimension
         self.width = width
         self.height = height
-        self.frame = None
+        # Draw 
         self.draw_area_err = True
         self.draw_area = draw_area
         self.road_color = (204, 255, 153)
-        self.lane_color = (0, 0, 255)
+        self.l_lane_color = (0, 0, 255)
+        self.r_lane_color = (255, 0, 0)
         self.lane_thickness = 30
+        # Lane search
         self.n_windows = 9
         self.margin = 100
+        self.nb_margin = 100
         self.px_threshold = 50
+        self.radii_threshold = 10
+        # Current lanes and radii
+        self.l_curr_fit = None
+        self.r_curr_fit = None
+        self.l_diff_fit = 0
+        self.r_diff_fit = 0
+        self.l_curr_cr = 0
+        self.r_curr_cr = 0
+        self.lost_track = 0
+        self.lost_radii = 0
+        self.poly_thr_a = 0.001
+        self.poly_thr_b = 0.4
+        self.poly_thr_c = 150
+        # Convert px to meter
+        self.convert_to_meter = True
+        if self.convert_to_meter:
+            self.px_to_m_y = 30/720 # meters per pixel in y dimension
+            self.px_to_m_x = 3.7/700 # meters per pixel in x dimension
+        else:
+            self.px_to_m_y = 1
+            self.px_to_m_x = 1
+        # Averaging
+        self.queue_len = 10
+        self.l_fit_que = deque(maxlen=self.queue_len)
+        self.r_fit_que = deque(maxlen=self.queue_len)
+        self.l_rad_que = deque(maxlen=self.queue_len)
+        self.r_rad_que = deque(maxlen=self.queue_len)
+        self.weights = np.arange(1, self.queue_len + 1) / self.queue_len
 
     """  General methods for setting files and getting information """
-
-    def set_next_frame(self, frame):
-        self.frame = frame
-
     def set_vertices(self, vertices):
         self.vertices = vertices
 
@@ -49,11 +80,57 @@ class LaneDetector:
         right_peak = np.argmax(histogram[center:]) + center
         return left_peak, right_peak
 
+    def get_processor(nbins=10):
+        
+        def process_image(self, img):
+            undistorted = cv2.undistort(img, mtx, dist, None, mtx)
+            binary_warped, binary_threshold = thresholding(undistorted, M)
+
+            if len(l_params)==0:
+                left_fit, right_fit, left_curverad, right_curverad, _ = sliding_window(binary_warped)
+            else:
+                left_fit, right_fit, left_curverad, right_curverad, _ = non_sliding(binary_warped,
+                                                                        np.average(l_params,0,weights[-len(l_params):]),
+                                                                        np.average(r_params,0,weights[-len(l_params):]))
+            
+            self.l_fit_lst.append(left_fit)
+            self.r_fit_lst.append(right_fit)
+            self.l_rad_lst.append(left_curverad)
+            self.r_rad_lst.append(right_curverad)
+            annotated_image = draw_lane(undistorted,
+                                        binary_warped,
+                                        np.average(l_params,0,weights[-len(l_params):]),
+                                        np.average(r_params,0,weights[-len(l_params):]),
+                                        np.average(l_radius,0,weights[-len(l_params):]),
+                                        np.average(r_radius,0,weights[-len(l_params):]))
+            return annotated_image
+        return process_image
+
     def find_lanes(self, frame):
-        histogram = self.calculate_histogram(frame)
-        left_peak, right_peak = self.get_hist_peaks(histogram)
-        left_fit, right_fit = self.fit_polynomial(frame, left_peak, right_peak)
-        return self.draw_lanes(frame, left_fit, right_fit)
+        self.check_track()
+        if self.l_curr_fit is None or self.r_curr_fit is None:
+            histogram = self.calculate_histogram(frame)
+            left_peak, right_peak = self.get_hist_peaks(histogram)
+            leftx, lefty, rightx, righty = self.sliding_window(frame, left_peak, right_peak)
+            left_fit, right_fit = self.fit_polynomial(leftx, lefty, rightx, righty)
+            left_fit_cr, right_fit_cr = self.fit_polynomial(
+                                        leftx * self.px_to_m_x, lefty * self.px_to_m_y, 
+                                        rightx * self.px_to_m_x, righty * self.px_to_m_y)
+            # Get radii of lane curvature
+            left_rad, right_rad = self.calculate_poly_radii(frame, left_fit_cr, right_fit_cr)
+            self.r_curr_cr = left_rad
+            self.l_curr_cr = right_rad
+            self.r_curr_fit = right_fit
+            self.l_curr_fit = left_fit
+            self.l_fit_que.append(left_fit)
+            self.r_fit_que.append(right_fit)
+            self.l_rad_que.append(left_rad)
+            self.r_rad_que.append(right_rad)
+        else:
+            left_fit, right_fit, left_fit_cr, right_fit_cr, _ = self.nearby_search(
+                                                                    frame, self.l_curr_fit, self.r_curr_fit)
+        avg_rad = round(np.mean([self.l_curr_cr, self.r_curr_cr]),0)
+        return self.draw_lanes(frame, left_fit, right_fit), avg_rad
 
 
     def sliding_window(self, frame, left_peak, right_peak):
@@ -107,9 +184,30 @@ class LaneDetector:
         righty = nonzero_y[right_lane_inds]
         return leftx, lefty, rightx, righty
 
-    def fit_polynomial(self, frame, left_peak, right_peak):
-        # Find our lane pixels first
-        leftx, lefty, rightx, righty = self.sliding_window(frame, left_peak, right_peak)
+    def calculate_poly_radii(self, frame, left_fit, right_fit):
+        frame_height = np.linspace(0, frame.shape[0] - 1, frame.shape[0])
+        max_px_window = np.max(frame_height)
+        try:
+            left_rad = ((1 + (2 * left_fit[0] * max_px_window + left_fit[1])**2)**1.5) / np.absolute(2 * left_fit[0])
+            right_rad = ((1 + (2 * right_fit[0] * max_px_window + right_fit[1])**2)**1.5) / np.absolute(2 * right_fit[0])
+            if math.isinf(left_rad) or math.isinf(right_rad):
+                left_rad = 0
+                right_rad = 0
+        except:
+            left_rad = 0
+            right_rad = 0
+        return int(left_rad), int(right_rad)
+
+    def check_radii(self, left_rad, right_rad):
+        abs_diff = np.absolute(left_rad - right_rad)
+        if abs_diff > (right_rad / self.radii_threshold) and self.lost_radii < 5:
+            self.lost_radii += 1
+            return False
+        else:
+            self.lost_radii = 0
+            return True
+
+    def fit_polynomial(self, leftx, lefty, rightx, righty):
         try:
             left_fit = np.polyfit(lefty, leftx, 2)
             right_fit = np.polyfit(righty, rightx, 2)
@@ -125,6 +223,21 @@ class LaneDetector:
             self.draw_area_err = False
         return left_fit, right_fit
 
+    def insert_text(self, frame, avg_rad):
+        if self.convert_to_meter:
+            unit = 'm'
+        else:
+            unit = ''
+        cv2.putText(frame, 'Average radius: {:.2f} {}'.format(int(avg_rad), unit), 
+            (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+
+    def check_track(self):
+        if self.lost_track > 5:
+            print('Reset tracks')
+            self.l_curr_fit = None
+            self.r_curr_fit = None
+            self.lost_track = 0
+
     def draw_lanes(self, warped_frame, left_fit, right_fit):
         # Convert to 3 channels
         frame_3channel = cv2.cvtColor(warped_frame, cv2.COLOR_GRAY2BGR)
@@ -136,12 +249,16 @@ class LaneDetector:
         # Calculate points of lanes a*x^2 + b*x + c
         left_lane = left_fit[0] * frame_height**2 + left_fit[1] * frame_height + left_fit[2]
         right_lane = right_fit[0] * frame_height**2 + right_fit[1] * frame_height + right_fit[2]
+        
+        #avg_rad = round(np.mean([left_rad, right_rad]),0)
+        #if self.check_radii(left_rad, right_rad):
+        #  return frame_3channel, 0
         # Make points useable for polylines and fillpoly
         pts_left = np.array([np.transpose(np.vstack([left_lane, frame_height]))])
         pts_right = np.array([np.flipud(np.transpose(np.vstack([right_lane, frame_height])))])
         # Draw the lane onto the warped blank image
-        cv2.polylines(lanes, np.int_(pts_left), False, self.lane_color, self.lane_thickness)
-        cv2.polylines(lanes, np.int_(pts_right), False, self.lane_color, self.lane_thickness)
+        cv2.polylines(lanes, np.int_(pts_left), False, self.l_lane_color, self.lane_thickness)
+        cv2.polylines(lanes, np.int_(pts_right), False, self.r_lane_color, self.lane_thickness)
         frame_3channel = cv2.addWeighted(frame_3channel, 1, lanes, 1, 0)
         if self.draw_area and self.draw_area_err:
             pts = np.hstack((pts_left, pts_right))
@@ -150,6 +267,60 @@ class LaneDetector:
         if not self.draw_area_err:
             self.draw_area_err = True
         return frame_3channel
+
+    def nearby_search(self, frame, left_fit, right_fit):
+        
+        nonzero = frame.nonzero()
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        margin = self.nb_margin
+
+        left_lane_inds = ((nonzerox > (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2] - margin))
+            & (nonzerox < (left_fit[0]*(nonzeroy**2) + left_fit[1]*nonzeroy + left_fit[2] + margin)))
+        right_lane_inds = ((nonzerox > (right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2] - margin))
+            & (nonzerox < (right_fit[0]*(nonzeroy**2) + right_fit[1]*nonzeroy + right_fit[2] + margin)))
+
+        # Extract left and right line pixel positions
+        leftx = nonzerox[left_lane_inds]
+        lefty = nonzeroy[left_lane_inds]
+        rightx = nonzerox[right_lane_inds]
+        righty = nonzeroy[right_lane_inds]
+
+        # Fit a second order polynomial to each
+        try:
+            left_fit, right_fit = self.fit_polynomial(leftx, lefty, rightx, righty)
+        except:
+            self.lost_track += 1
+            return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
+        else:
+            # Check difference in fit coefficients between last and new fits  
+            self.l_diff_fit = self.l_curr_fit - left_fit
+            self.r_diff_fit = self.r_curr_fit - right_fit
+            if (self.l_diff_fit[0]>self.poly_thr_a or self.l_diff_fit[1]>self.poly_thr_b or self.l_diff_fit[2]>self.poly_thr_c):
+                self.lost_track += 1
+                return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
+            if (self.r_diff_fit[0]>self.poly_thr_a or self.r_diff_fit[1]>self.poly_thr_b or self.r_diff_fit[2]>self.poly_thr_c):
+                self.lost_track += 1
+                return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
+            # Reset counter
+            self.lost_track = 0
+            # Update current fit
+            self.l_curr_fit = left_fit
+            self.r_curr_fit = right_fit
+            # Fit new polynomials to x,y in world space
+            try:
+                left_fit_cr, right_fit_cr = self.fit_polynomial(
+                                leftx * self.px_to_m_x, lefty * self.px_to_m_y, 
+                                rightx * self.px_to_m_x, righty * self.px_to_m_y)
+            except:
+                return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
+            left_cr, right_cr = self.calculate_poly_radii(frame, left_fit_cr, right_fit_cr)
+            if self.check_radii(left_cr, right_cr):
+                self.l_curr_cr = left_cr
+                self.r_curr_cr = right_cr
+            else: 
+                return left_fit, right_fit, self.l_curr_cr, self.r_curr_cr, None
+            return left_fit, right_fit, left_cr, right_cr, None
 
 def main():
     print("No main.")
