@@ -16,7 +16,7 @@ import math
 from collections import deque 
 
 class LaneDetector:
-    def __init__(self, is_video=False, width=1280, height=720, draw_area = True):
+    def __init__(self, is_video=False, width=1280, height=720, draw_area = True, queue_len=10):
         # Roi
         self.vertices = None
         # Video pipline
@@ -37,6 +37,7 @@ class LaneDetector:
         self.nb_margin = 100
         self.px_threshold = 50
         self.radii_threshold = 10
+        self.min_lane_dis = 600
         # Current lanes and radii
         self.l_curr_fit = None
         self.r_curr_fit = None
@@ -58,7 +59,7 @@ class LaneDetector:
             self.px_to_m_y = 1
             self.px_to_m_x = 1
         # Averaging
-        self.queue_len = 10
+        self.queue_len = queue_len
         self.l_fit_que = deque(maxlen=self.queue_len)
         self.r_fit_que = deque(maxlen=self.queue_len)
         self.l_rad_que = deque(maxlen=self.queue_len)
@@ -69,6 +70,11 @@ class LaneDetector:
     def set_vertices(self, vertices):
         self.vertices = vertices
 
+    def empty_queue(self):
+        self.l_fit_que = deque(maxlen=self.queue_len)
+        self.r_fit_que = deque(maxlen=self.queue_len)
+        self.l_rad_que = deque(maxlen=self.queue_len)
+        self.r_rad_que = deque(maxlen=self.queue_len)
     """ Find lanes """
 
     def calculate_histogram(self, frame):
@@ -80,35 +86,10 @@ class LaneDetector:
         right_peak = np.argmax(histogram[center:]) + center
         return left_peak, right_peak
 
-    def get_processor(nbins=10):
-        
-        def process_image(self, img):
-            undistorted = cv2.undistort(img, mtx, dist, None, mtx)
-            binary_warped, binary_threshold = thresholding(undistorted, M)
-
-            if len(l_params)==0:
-                left_fit, right_fit, left_curverad, right_curverad, _ = sliding_window(binary_warped)
-            else:
-                left_fit, right_fit, left_curverad, right_curverad, _ = non_sliding(binary_warped,
-                                                                        np.average(l_params,0,weights[-len(l_params):]),
-                                                                        np.average(r_params,0,weights[-len(l_params):]))
-            
-            self.l_fit_lst.append(left_fit)
-            self.r_fit_lst.append(right_fit)
-            self.l_rad_lst.append(left_curverad)
-            self.r_rad_lst.append(right_curverad)
-            annotated_image = draw_lane(undistorted,
-                                        binary_warped,
-                                        np.average(l_params,0,weights[-len(l_params):]),
-                                        np.average(r_params,0,weights[-len(l_params):]),
-                                        np.average(l_radius,0,weights[-len(l_params):]),
-                                        np.average(r_radius,0,weights[-len(l_params):]))
-            return annotated_image
-        return process_image
-
     def find_lanes(self, frame):
         self.check_track()
         if self.l_curr_fit is None or self.r_curr_fit is None:
+            self.empty_queue()
             histogram = self.calculate_histogram(frame)
             left_peak, right_peak = self.get_hist_peaks(histogram)
             leftx, lefty, rightx, righty = self.sliding_window(frame, left_peak, right_peak)
@@ -128,9 +109,17 @@ class LaneDetector:
             self.r_rad_que.append(right_rad)
         else:
             left_fit, right_fit, left_fit_cr, right_fit_cr, _ = self.nearby_search(
-                                                                    frame, self.l_curr_fit, self.r_curr_fit)
-        avg_rad = round(np.mean([self.l_curr_cr, self.r_curr_cr]),0)
-        return self.draw_lanes(frame, left_fit, right_fit), avg_rad
+                                                                    frame, 
+                                                                    np.average(self.l_fit_que, 0, self.weights[-len(self.l_fit_que):]), 
+                                                                    np.average(self.r_fit_que, 0, self.weights[-len(self.r_fit_que):]))
+            self.l_fit_que.append(left_fit)
+            self.r_fit_que.append(right_fit)
+        avg_rad = round(np.mean([np.average(self.r_rad_que, 0, self.weights[-len(self.r_rad_que):]), 
+                                np.average(self.l_rad_que, 0, self.weights[-len(self.l_rad_que):])]),0)
+        return (self.draw_lanes(frame, 
+                                np.average(self.l_fit_que, 0, self.weights[-len(self.l_fit_que):]), 
+                                np.average(self.r_fit_que, 0, self.weights[-len(self.r_fit_que):])),
+                avg_rad)
 
 
     def sliding_window(self, frame, left_peak, right_peak):
@@ -191,16 +180,17 @@ class LaneDetector:
             left_rad = ((1 + (2 * left_fit[0] * max_px_window + left_fit[1])**2)**1.5) / np.absolute(2 * left_fit[0])
             right_rad = ((1 + (2 * right_fit[0] * max_px_window + right_fit[1])**2)**1.5) / np.absolute(2 * right_fit[0])
             if math.isinf(left_rad) or math.isinf(right_rad):
-                left_rad = 0
-                right_rad = 0
+                return self.l_curr_cr, self.r_curr_cr
         except:
-            left_rad = 0
-            right_rad = 0
+            return self.l_curr_cr, self.r_curr_cr
         return int(left_rad), int(right_rad)
 
     def check_radii(self, left_rad, right_rad):
-        abs_diff = np.absolute(left_rad - right_rad)
-        if abs_diff > (right_rad / self.radii_threshold) and self.lost_radii < 5:
+        avg_l = np.average(self.l_rad_que, 0, self.weights[-len(self.l_rad_que):])
+        avg_r = np.average(self.r_rad_que, 0, self.weights[-len(self.r_rad_que):])
+        abs_l__diff = np.absolute(avg_l - left_rad)
+        abs_r__diff = np.absolute(avg_r - right_rad)
+        if abs_l__diff > (avg_l / self.radii_threshold) and self.lost_radii < 5 and abs_r__diff > (avg_r / self.radii_threshold):
             self.lost_radii += 1
             return False
         else:
@@ -213,13 +203,13 @@ class LaneDetector:
             right_fit = np.polyfit(righty, rightx, 2)
         except:
             # Empty vector
-            left_fit = [0, 0, 0]
+            left_fit = self.l_curr_fit
             self.draw_area_err = False
         try:
             right_fit = np.polyfit(righty, rightx, 2)
         except:
             # Empty vector
-            right_fit = [0, 0, 0]
+            right_fit = self.r_curr_fit
             self.draw_area_err = False
         return left_fit, right_fit
 
@@ -249,13 +239,12 @@ class LaneDetector:
         # Calculate points of lanes a*x^2 + b*x + c
         left_lane = left_fit[0] * frame_height**2 + left_fit[1] * frame_height + left_fit[2]
         right_lane = right_fit[0] * frame_height**2 + right_fit[1] * frame_height + right_fit[2]
-        
-        #avg_rad = round(np.mean([left_rad, right_rad]),0)
-        #if self.check_radii(left_rad, right_rad):
-        #  return frame_3channel, 0
         # Make points useable for polylines and fillpoly
         pts_left = np.array([np.transpose(np.vstack([left_lane, frame_height]))])
         pts_right = np.array([np.flipud(np.transpose(np.vstack([right_lane, frame_height])))])
+        #print(pts_right[0][len(pts_right[0]) - 20][0] - pts_left[0][len(pts_left[0]) - 20][0])
+        if (pts_right[0][len(pts_right[0]) - 20][0] - pts_left[0][len(pts_left[0]) - 20][0]) < self.min_lane_dis:
+            return frame_3channel
         # Draw the lane onto the warped blank image
         cv2.polylines(lanes, np.int_(pts_left), False, self.l_lane_color, self.lane_thickness)
         cv2.polylines(lanes, np.int_(pts_right), False, self.r_lane_color, self.lane_thickness)
@@ -294,8 +283,12 @@ class LaneDetector:
             return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
         else:
             # Check difference in fit coefficients between last and new fits  
-            self.l_diff_fit = self.l_curr_fit - left_fit
-            self.r_diff_fit = self.r_curr_fit - right_fit
+            try:
+                self.l_diff_fit = self.l_curr_fit - left_fit
+                self.r_diff_fit = self.r_curr_fit - right_fit
+            except:
+                self.l_diff_fit = 0
+                self.r_diff_fit = 0
             if (self.l_diff_fit[0]>self.poly_thr_a or self.l_diff_fit[1]>self.poly_thr_b or self.l_diff_fit[2]>self.poly_thr_c):
                 self.lost_track += 1
                 return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
@@ -318,6 +311,8 @@ class LaneDetector:
             if self.check_radii(left_cr, right_cr):
                 self.l_curr_cr = left_cr
                 self.r_curr_cr = right_cr
+                self.l_rad_que.append(left_cr)
+                self.r_rad_que.append(right_cr)
             else: 
                 return left_fit, right_fit, self.l_curr_cr, self.r_curr_cr, None
             return left_fit, right_fit, left_cr, right_cr, None
