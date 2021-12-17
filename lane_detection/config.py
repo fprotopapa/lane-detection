@@ -29,8 +29,17 @@ height = 720
 # Sliding window
 n_windows = 9
 margin = 100
+nb_margin = 100
 px_threshold = 50
+radii_threshold = 10
 # Conversion pixel to meter
 convert_to_meter = True
 px_to_m_y = 30/720 # meters per pixel in y dimension
 px_to_m_x = 3.7/700 # meters per pixel in x dimension
+# Lanes and poly
+min_lane_dis = 600
+poly_thr_a = 0.001
+poly_thr_b = 0.4
+poly_thr_c = 150
+# Average
+queue_len = 20
