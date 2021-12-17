@@ -20,7 +20,8 @@ yellow_upper = [40, 255, 255]
 # Drawing configuration
 draw_area = True
 road_color = (204, 255, 153)
-lane_color = (0, 0, 255)
+l_lane_color = (0, 0, 255)
+r_lane_color = (255, 0, 0)
 lane_thickness = 30
 # Frame width and height
 width = 1280
@@ -29,3 +30,7 @@ height = 720
 n_windows = 9
 margin = 100
 px_threshold = 50
+# Conversion pixel to meter
+convert_to_meter = True
+px_to_m_y = 30/720 # meters per pixel in y dimension
+px_to_m_x = 3.7/700 # meters per pixel in x dimension
