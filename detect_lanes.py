@@ -65,7 +65,6 @@ def process_video(vid_files, mtx, dist, Ftf):
     # Loop through found video files
     for vid in vid_files:
         # Open next video file
-        indx = 0
         cap = cv2.VideoCapture(vid)
         if not cap.isOpened():
             print("Error opening file {}".format(vid))
@@ -92,9 +91,6 @@ def process_video(vid_files, mtx, dist, Ftf):
                 processed_frames += 1
                 # Start lane detection
                 process_lane_detection(bgr_frame, mtx, dist, Ftf, filename)
-                indx += 1
-                if indx > 99:
-                    indx = 0
                 # 'ESC' to skip to next file and 'q' to end application
                 pressed_key = cv2.waitKey(1) & 0xFF
                 if pressed_key == 27:
@@ -270,7 +266,7 @@ if __name__ == "__main__":
 
     calibration_data_path = os.path.join('lane_detection', 'calibration_data', "calibration.p")
     # Object for finding and drawing lanes
-    Detector = det.LaneDetector(is_video=is_video)
+    Detector = det.LaneDetector(is_video=is_video, queue_len=cfg.queue_len)
     # Drawing
     Detector.draw_area = cfg.draw_area
     Detector.l_lane_color = cfg.l_lane_color
@@ -285,6 +281,17 @@ if __name__ == "__main__":
     # Sliding window
     Detector.n_windows = cfg.n_windows
     Detector.margin = cfg.margin
-    Detector.px_threshold = cfg.px_threshold
+    Detector.nb_margin = cfg.nb_margin
+    Detector.nb_margin = cfg.nb_margin
+    Detector.radii_threshold = cfg.radii_threshold
+    # Conversion pixel to meter
+    Detector.convert_to_meter = cfg.convert_to_meter
+    Detector.px_to_m_y = cfg.px_to_m_y
+    Detector.px_to_m_x = cfg.px_to_m_x
+    # Lanes and poly
+    Detector.min_lane_dis = cfg.min_lane_dis
+    Detector.poly_thr_a = cfg.poly_thr_a
+    Detector.poly_thr_b = cfg.poly_thr_b
+    Detector.poly_thr_c = cfg.poly_thr_c
     # Start process
     main()
