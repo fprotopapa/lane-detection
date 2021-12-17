@@ -183,9 +183,10 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     # Combine the mask
     comb_mask = Ftf.combine_mask(white_mask, yellow_mask)
     intersect = Ftf.intersect_mask(comb_mask, sobel_frame)
-    # ToDo average       
+    # ToDo average, curve prediction       
     # Draw lanes
-    lanes = Detector.find_lanes(intersect)
+    lanes, avg_rad = Detector.find_lanes(intersect)
+    Detector.insert_text(bgr_frame, avg_rad)
     # Return from Bird-eye view to normal view
     unwarp = Ftf.untransform_frame(lanes, minv)
     # Overlay drawings on bgr frame
@@ -272,7 +273,8 @@ if __name__ == "__main__":
     Detector = det.LaneDetector(is_video=is_video)
     # Drawing
     Detector.draw_area = cfg.draw_area
-    Detector.lane_color = cfg.lane_color
+    Detector.l_lane_color = cfg.l_lane_color
+    Detector.r_lane_color = cfg.r_lane_color
     Detector.lane_thickness = cfg.lane_thickness
     Detector.road_color = cfg.road_color
     # Default ROI
