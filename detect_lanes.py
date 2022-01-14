@@ -23,6 +23,7 @@ import lane_detection.lane_detector as det
 import lane_detection.config as cfg
 from lane_detection.get_coordinates import set_polygon
 
+DEBUG = True
 #
 # Print Video Information, return video resolution (width, height)
 def get_video_information(cap, filename=None):
@@ -60,6 +61,7 @@ def get_image_information(filename=None):
 #
 # Video pipeline
 def process_video(vid_files, mtx, dist, Ftf):
+    global START_TICK_FRAME
     # For manual application exit
     end_application = False
     # Loop through found video files
@@ -69,22 +71,24 @@ def process_video(vid_files, mtx, dist, Ftf):
         if not cap.isOpened():
             print("Error opening file {}".format(vid))
         filename = utils.get_filename(vid)
-        # Reset selected vertices
-        Detector.set_vertices(None)
+        # Reset detector for next clip
+        Detector.reset_detector()
         # Check video orientation
+        flip = False
         if cap.get(cv2.CAP_PROP_FRAME_WIDTH) != width:
             flip = True
         # Display file information
         get_video_information(cap, filename)
         # Enter video processing
+        Detector.vertices = None
         processed_frames = 0
-        start_tick_vid = cv2.getTickCount()
         while cap.isOpened():
+            START_TICK_FRAME = cv2.getTickCount()
             # Read next frame
             ret, bgr_frame = cap.read()
             # Flip if necessary
             if flip:
-                bgr_frame = cv2.rotate(bgr_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+                bgr_frame = cv2.rotate(bgr_frame, cv2.ROTATE_90_COUNTERCLOCKWISE)#cv2.ROTATE_90_COUNTERCLOCKWISE
             # Check for error while retrieving frame
             if ret:
                 # Number of frames
@@ -102,15 +106,6 @@ def process_video(vid_files, mtx, dist, Ftf):
             else:
                 # Error while retrieving frame or video ended
                 break
-        # Process time for video file    
-        print(
-            """     
-            FPS post
-            Process:  {}
-            ----------------------
-            """.format(int(1 / (utils.get_passed_time(
-                start_tick_vid, cv2.getTickCount(), processed_frames))
-                        )))
         # Release video file
         cap.release()
         # Check for manual end command
@@ -120,9 +115,13 @@ def process_video(vid_files, mtx, dist, Ftf):
 #
 # Image pipeline
 def process_image(image_files, mtx, dist, Ftf):
+    global START_TICK_FRAME
     for image_path in image_files:
+        START_TICK_FRAME = cv2.getTickCount()
         filename = utils.get_filename(image_path)
         image = cv2.imread(image_path)
+        # Reset detector for next image
+        Detector.reset_detector()
         process_lane_detection(image, mtx, dist, Ftf, filename)
         # 'ESC' to skip to next file and 'q' to end application
         pressed_key = cv2.waitKey(0) & 0xFF
@@ -138,29 +137,42 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     #
     # Lane Detection
     #
+    global START_TICK_FRAME
     # Distort frame
     if is_calibration:
         undist_frame = Ftf.undistort_frame(bgr_frame, mtx, dist)
     else:
         undist_frame = bgr_frame
     # Select ROI
-    if is_man_roi:
-        if is_video and Detector.vertices is None:
+    if is_man_roi or Detector.vertices is None:
+        # Check for saved ROI
+        try:
+            Detector.vertices = utils.save_load_np_var(filename, save = False)
+        except:
+            Detector.vertices = None
+        if is_man_roi:
             vertices = set_polygon(undist_frame)
             Detector.set_vertices(vertices)
-        elif is_video and Detector.vertices is not None:
-            vertices = Detector.vertices
-        else:
+        elif is_video and Detector.vertices is None:
             vertices = set_polygon(undist_frame)
+            Detector.set_vertices(vertices)
+            utils.save_load_np_var(filename, data = vertices)
+        elif not is_video and Detector.vertices is None:
+            vertices = set_polygon(undist_frame)
+            Detector.set_vertices(vertices)
+            utils.save_load_np_var(filename, data = vertices)
+        else:
+            vertices = Detector.vertices
     else:
-        vertices = cfg.default_vertices
+        vertices = Detector.vertices
     vert_poly = np.array([[vertices[0], vertices[1], vertices[2], vertices[3]]], dtype=np.int32)
     vert_trans = np.array([[vertices[1], vertices[0], vertices[2], vertices[3]]], dtype=np.float32)
     # Generate ROI on frame and tranform to Bird-Eye view
     roi_frame = Ftf.region_of_interest(undist_frame, vert_poly)
     trans_frame, M, minv = Ftf.transform_frame(roi_frame, vert_trans)
-    # ToDO: Adjust from threshold
-    bright_frame = Ftf.adjust_frame(trans_frame, 1.1)
+    # Adjust brightness
+    bright_fac = Ftf.brightness_estimation(trans_frame)
+    bright_frame = Ftf.adjust_frame(trans_frame, bright_fac)
     # Convert color space
     hls_frame = Ftf.bgr_to_x(bright_frame, 'hls')
     gray_frame= Ftf.bgr_to_x(trans_frame, 'gray')
@@ -168,31 +180,48 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     blur_frame = Ftf.apply_gaussian_blur(gray_frame)
     canny_frame = Ftf.apply_canny_edge_det(blur_frame)
     sobel_frame = Ftf.apply_sobel_edge_det(blur_frame)
+    filter_frame = sobel_frame
     # White color mask
-    lower = np.uint8(cfg.white_lower)
-    upper = np.uint8(cfg.white_upper)
-    white_mask = Ftf.create_mask(hls_frame, (lower, upper))
+    lower = np.uint8(cfg.white_lower) # [200, 200, 200])
+    upper = np.uint8(cfg.white_upper) # [255, 255, 255])
+    white_mask = Ftf.create_mask(bright_frame, (lower, upper))
     # Yellow color mask
     lower = np.uint8(cfg.yellow_lower)
     upper = np.uint8(cfg.yellow_upper)
     yellow_mask = Ftf.create_mask(hls_frame, (lower, upper))
     # Combine the mask
-    comb_mask = Ftf.combine_mask(white_mask, yellow_mask)
-    intersect = Ftf.intersect_mask(comb_mask, sobel_frame)
+    comb_mask = Ftf.combine_frames(white_mask, yellow_mask)
+    intersect = Ftf.intersect_mask(comb_mask, filter_frame)
     # ToDo average, curve prediction       
     # Draw lanes
     lanes, avg_rad = Detector.find_lanes(intersect)
-    Detector.insert_text(bgr_frame, avg_rad)
+
+    if avg_rad is not None:
+        Detector.insert_direction(bgr_frame, avg_rad)
     # Return from Bird-eye view to normal view
     unwarp = Ftf.untransform_frame(lanes, minv)
     # Overlay drawings on bgr frame
     result = cv2.addWeighted(bgr_frame, 1, unwarp, 1, 0)
+    # FPS
+    fps = 1 / (utils.get_passed_time(
+                            START_TICK_FRAME, 
+                            cv2.getTickCount()))
+    Detector.insert_fps(result, fps)
+
     # Display results
-    #cv2.imshow("original", bgr_frame)
-    #cv2.imshow("intersect", intersect)
-    #cv2.imshow("lanes", unwarp)
-    cv2.imshow("result", result)
-    cv2.setWindowTitle("result", filename)
+    if DEBUG:
+        cv2.imshow("Combined", comb_mask)
+        cv2.imshow("White", white_mask)
+        cv2.imshow("Edge", filter_frame)
+        cv2.imshow("Bright", bright_frame)
+        cv2.imshow("original", bgr_frame)
+        cv2.imshow("intersect", intersect)
+        cv2.imshow("lanes", unwarp)
+        cv2.imshow("result", result)
+        cv2.setWindowTitle("result", filename)
+    else:
+        cv2.imshow("result", result)
+        cv2.setWindowTitle("result", filename)
 
 
 
@@ -215,14 +244,10 @@ def main():
         import pickle
         objpoints, imgpoints = pickle.load(open(calibration_data_path, "rb"))
         mtx, dist = Ftf.calibrate_camera(width, height, objpoints, imgpoints) 
-    # Application start time
-    start_tick_app = cv2.getTickCount()
     if is_video:
         process_video(files, mtx, dist, Ftf)
     else:
         process_image(files, mtx, dist, Ftf)
-    # Total application runtime
-    print("Total processing time: {}s".format(utils.get_passed_time(start_tick_app, cv2.getTickCount())))
     # Close Window
     cv2.destroyAllWindows()
 
@@ -233,25 +258,26 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description='Start lane detection. Press <q> to quit and <ESC> for next frame.')
-    parser.add_argument('--video', type=bool, default=False,
+    parser.add_argument('--image', type=bool, default=False,
                     help='Detect lanes on video files or images <False>')
-    parser.add_argument('--cal', type=bool, default=True,
-                    help='Calibrate input files <True>')
+    parser.add_argument('--nocal', type=bool, default=False,
+                    help='Don\' calibrate input files <False>')
     parser.add_argument('--format', type=str, default=None,
                     help='File format <"mov">/<"jpg">')
     parser.add_argument('--size', nargs=2, type=int, default=[1280, 720],
                     help='Image width and height <1280 720>')
-    parser.add_argument('--roi', type=bool, default=True,
-                    help='Manual ROI selection <True>')
+    parser.add_argument('--roi', type=bool, default=False,
+                    help='Manual ROI selection <False>')
     args = parser.parse_args()
     
-    is_video = args.video
-    is_calibration = args.cal
+    is_video = not args.image
+    is_calibration = not args.nocal
     is_man_roi = args.roi
-
     width = args.size[0]
     height = args.size[1]
     
+    START_TICK_FRAME = 0
+
     video_file_format = 'mov'
     image_file_format = 'jpg'
 
@@ -273,8 +299,6 @@ if __name__ == "__main__":
     Detector.r_lane_color = cfg.r_lane_color
     Detector.lane_thickness = cfg.lane_thickness
     Detector.road_color = cfg.road_color
-    # Default ROI
-    Detector.set_vertices(cfg.default_vertices)
     # Frame dimensions
     Detector.width = cfg.width
     Detector.height = cfg.height
@@ -285,7 +309,6 @@ if __name__ == "__main__":
     Detector.nb_margin = cfg.nb_margin
     Detector.radii_threshold = cfg.radii_threshold
     # Conversion pixel to meter
-    Detector.convert_to_meter = cfg.convert_to_meter
     Detector.px_to_m_y = cfg.px_to_m_y
     Detector.px_to_m_x = cfg.px_to_m_x
     # Lanes and poly

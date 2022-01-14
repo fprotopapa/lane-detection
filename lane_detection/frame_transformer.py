@@ -59,9 +59,25 @@ class FrameTransformer:
         return cv2.bitwise_or(channel, channel, mask=mask)
 
     @staticmethod
+    def combine_frames(frame_1, frame_2):
+        return cv2.bitwise_or(frame_1, frame_2)
+
+    @staticmethod
     def intersect_mask(channel, mask):
         return cv2.bitwise_and(channel, channel, mask=mask)
 
+    @staticmethod
+    def brightness_estimation(frame):
+        mean = np.mean(frame)
+        if mean < 40:
+            return 1.4
+        elif mean < 60:
+            return 1.3
+        elif mean < 80:
+            return 0.9
+        else:
+            return 0.7
+        
     @staticmethod
     def adjust_frame(frame, brightness=1.0, contrast=0):
         # brightness 0 - 100

@@ -51,13 +51,8 @@ class LaneDetector:
         self.poly_thr_b = 0.4
         self.poly_thr_c = 150
         # Convert px to meter
-        self.convert_to_meter = True
-        if self.convert_to_meter:
-            self.px_to_m_y = 30/720 # meters per pixel in y dimension
-            self.px_to_m_x = 3.7/700 # meters per pixel in x dimension
-        else:
-            self.px_to_m_y = 1
-            self.px_to_m_x = 1
+        self.px_to_m_y = 30/720 # meters per pixel in y dimension
+        self.px_to_m_x = 3.7/700 # meters per pixel in x dimension
         # Averaging
         self.queue_len = queue_len
         self.l_fit_que = deque(maxlen=self.queue_len)
@@ -65,10 +60,25 @@ class LaneDetector:
         self.l_rad_que = deque(maxlen=self.queue_len)
         self.r_rad_que = deque(maxlen=self.queue_len)
         self.weights = np.arange(1, self.queue_len + 1) / self.queue_len
+        # No Text on frame
+        self.no_text = False
+
 
     """  General methods for setting files and getting information """
     def set_vertices(self, vertices):
         self.vertices = vertices
+
+    def reset_detector(self):
+        self.empty_queue()
+        self.vertices = None
+        self.l_curr_fit = None
+        self.r_curr_fit = None
+        self.l_diff_fit = 0
+        self.r_diff_fit = 0
+        self.l_curr_cr = 0
+        self.r_curr_cr = 0
+        self.lost_track = 0
+        self.lost_radii = 0
 
     def empty_queue(self):
         self.l_fit_que = deque(maxlen=self.queue_len)
@@ -85,6 +95,10 @@ class LaneDetector:
         left_peak = np.argmax(histogram[:center])
         right_peak = np.argmax(histogram[center:]) + center
         return left_peak, right_peak
+
+    def cr_to_degree(self, cr, arc_length):
+        dc = (180 * arc_length) / (math.pi * cr)
+        return dc/2
 
     def find_lanes(self, frame):
         self.check_track()
@@ -116,10 +130,14 @@ class LaneDetector:
             self.r_fit_que.append(right_fit)
         avg_rad = round(np.mean([np.average(self.r_rad_que, 0, self.weights[-len(self.r_rad_que):]), 
                                 np.average(self.l_rad_que, 0, self.weights[-len(self.l_rad_que):])]),0)
-        return (self.draw_lanes(frame, 
-                                np.average(self.l_fit_que, 0, self.weights[-len(self.l_fit_que):]), 
-                                np.average(self.r_fit_que, 0, self.weights[-len(self.r_fit_que):])),
-                avg_rad)
+        
+        try:
+            return (self.draw_lanes(frame, 
+                                    np.average(self.l_fit_que, 0, self.weights[-len(self.l_fit_que):]), 
+                                    np.average(self.r_fit_que, 0, self.weights[-len(self.r_fit_que):])),
+                    avg_rad)
+        except:
+            return (np.zeros_like(cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)), None)
 
 
     def sliding_window(self, frame, left_peak, right_peak):
@@ -177,8 +195,8 @@ class LaneDetector:
         frame_height = np.linspace(0, frame.shape[0] - 1, frame.shape[0])
         max_px_window = np.max(frame_height)
         try:
-            left_rad = ((1 + (2 * left_fit[0] * max_px_window + left_fit[1])**2)**1.5) / np.absolute(2 * left_fit[0])
-            right_rad = ((1 + (2 * right_fit[0] * max_px_window + right_fit[1])**2)**1.5) / np.absolute(2 * right_fit[0])
+            left_rad = ((1 + (2 * left_fit[0] * max_px_window * self.px_to_m_y + left_fit[1])**2)**1.5) / np.absolute(2 * left_fit[0])
+            right_rad = ((1 + (2 * right_fit[0] * max_px_window * self.px_to_m_y + right_fit[1])**2)**1.5) / np.absolute(2 * right_fit[0])
             if math.isinf(left_rad) or math.isinf(right_rad):
                 return self.l_curr_cr, self.r_curr_cr
         except:
@@ -213,13 +231,16 @@ class LaneDetector:
             self.draw_area_err = False
         return left_fit, right_fit
 
-    def insert_text(self, frame, avg_rad):
-        if self.convert_to_meter:
-            unit = 'm'
+    def insert_direction(self, frame, avg_rad):
+        if not self.no_text:
+            cv2.putText(frame, 'Curvature radius: {:.2f} m'.format(avg_rad), 
+                (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
         else:
-            unit = ''
-        cv2.putText(frame, 'Average radius: {:.2f} {}'.format(int(avg_rad), unit), 
-            (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+            self.no_text = False
+
+    def insert_fps(self, frame, fps):
+        cv2.putText(frame, 'FPS: {}'.format(int(fps)), 
+            (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
 
     def check_track(self):
         if self.lost_track > 5:
@@ -227,10 +248,11 @@ class LaneDetector:
             self.l_curr_fit = None
             self.r_curr_fit = None
             self.lost_track = 0
+            self.no_text = True
 
     def draw_lanes(self, warped_frame, left_fit, right_fit):
         # Convert to 3 channels
-        frame_3channel = cv2.cvtColor(warped_frame, cv2.COLOR_GRAY2BGR)
+        frame_3channel = cv2.cvtColor(np.zeros_like(warped_frame), cv2.COLOR_GRAY2BGR)
         # Generate axis for polynomial
         frame_height = np.linspace(0, frame_3channel.shape[0] - 1, frame_3channel.shape[0])
         # Frames to save results
@@ -249,6 +271,7 @@ class LaneDetector:
         cv2.polylines(lanes, np.int_(pts_left), False, self.l_lane_color, self.lane_thickness)
         cv2.polylines(lanes, np.int_(pts_right), False, self.r_lane_color, self.lane_thickness)
         frame_3channel = cv2.addWeighted(frame_3channel, 1, lanes, 1, 0)
+        
         if self.draw_area and self.draw_area_err:
             pts = np.hstack((pts_left, pts_right))
             cv2.fillPoly(area, np.int_([pts]), self.road_color)
@@ -279,6 +302,7 @@ class LaneDetector:
         try:
             left_fit, right_fit = self.fit_polynomial(leftx, lefty, rightx, righty)
         except:
+            print("Couldn't fit polynomial.")
             self.lost_track += 1
             return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
         else:
@@ -291,9 +315,13 @@ class LaneDetector:
                 self.r_diff_fit = 0
             if (self.l_diff_fit[0]>self.poly_thr_a or self.l_diff_fit[1]>self.poly_thr_b or self.l_diff_fit[2]>self.poly_thr_c):
                 self.lost_track += 1
+                print("Left lane threshold exceeded.")
+                self.no_text = True
                 return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
             if (self.r_diff_fit[0]>self.poly_thr_a or self.r_diff_fit[1]>self.poly_thr_b or self.r_diff_fit[2]>self.poly_thr_c):
                 self.lost_track += 1
+                print("Right lane threshold exceeded.")
+                self.no_text = True
                 return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
             # Reset counter
             self.lost_track = 0
@@ -306,8 +334,9 @@ class LaneDetector:
                                 leftx * self.px_to_m_x, lefty * self.px_to_m_y, 
                                 rightx * self.px_to_m_x, righty * self.px_to_m_y)
             except:
-                return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None
+                return self.l_curr_fit, self.r_curr_fit, self.l_curr_cr, self.r_curr_cr, None       
             left_cr, right_cr = self.calculate_poly_radii(frame, left_fit_cr, right_fit_cr)
+
             if self.check_radii(left_cr, right_cr):
                 self.l_curr_cr = left_cr
                 self.r_curr_cr = right_cr
