@@ -2,6 +2,7 @@
 input_video/
 input_image/
 test_image/
+**/roi/*.npy
 
 # Stuff to ignore
 ignore/
