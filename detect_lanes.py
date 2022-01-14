@@ -23,7 +23,7 @@ import lane_detection.lane_detector as det
 import lane_detection.config as cfg
 from lane_detection.get_coordinates import set_polygon
 
-DEBUG = True
+DEBUG = False
 #
 # Print Video Information, return video resolution (width, height)
 def get_video_information(cap, filename=None):
@@ -71,6 +71,10 @@ def process_video(vid_files, mtx, dist, Ftf):
         if not cap.isOpened():
             print("Error opening file {}".format(vid))
         filename = utils.get_filename(vid)
+        # Save output
+        # capture = cv2.VideoWriter(str(filename) + '.avi', 
+        #                  cv2.VideoWriter_fourcc(*'MJPG'),
+        #                  20, (Detector.width, Detector.height))
         # Reset detector for next clip
         Detector.reset_detector()
         # Check video orientation
@@ -94,7 +98,9 @@ def process_video(vid_files, mtx, dist, Ftf):
                 # Number of frames
                 processed_frames += 1
                 # Start lane detection
-                process_lane_detection(bgr_frame, mtx, dist, Ftf, filename)
+                result = process_lane_detection(bgr_frame, mtx, dist, Ftf, filename)
+                # Write clip
+                #capture.write(result)
                 # 'ESC' to skip to next file and 'q' to end application
                 pressed_key = cv2.waitKey(1) & 0xFF
                 if pressed_key == 27:
@@ -146,11 +152,12 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     # Select ROI
     if is_man_roi or Detector.vertices is None:
         # Check for saved ROI
-        try:
-            Detector.vertices = utils.save_load_np_var(filename, save = False)
-        except:
-            Detector.vertices = None
-        if is_man_roi:
+        if not is_man_roi:
+            try:
+                Detector.vertices = utils.save_load_np_var(filename, save = False)
+            except:
+                Detector.vertices = None
+        if is_man_roi and Detector.vertices is None:
             vertices = set_polygon(undist_frame)
             Detector.set_vertices(vertices)
         elif is_video and Detector.vertices is None:
@@ -178,7 +185,7 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     gray_frame= Ftf.bgr_to_x(trans_frame, 'gray')
     # Edge detection
     blur_frame = Ftf.apply_gaussian_blur(gray_frame)
-    canny_frame = Ftf.apply_canny_edge_det(blur_frame)
+    #canny_frame = Ftf.apply_canny_edge_det(blur_frame)
     sobel_frame = Ftf.apply_sobel_edge_det(blur_frame)
     filter_frame = sobel_frame
     # White color mask
@@ -222,7 +229,7 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     else:
         cv2.imshow("result", result)
         cv2.setWindowTitle("result", filename)
-
+    return result
 
 
 #

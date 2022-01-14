@@ -69,14 +69,15 @@ class FrameTransformer:
     @staticmethod
     def brightness_estimation(frame):
         mean = np.mean(frame)
+        #print(mean)
         if mean < 40:
             return 1.4
         elif mean < 60:
             return 1.3
         elif mean < 80:
-            return 0.9
+            return 0.3
         else:
-            return 0.7
+            return 0.2
         
     @staticmethod
     def adjust_frame(frame, brightness=1.0, contrast=0):
