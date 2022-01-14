@@ -17,6 +17,7 @@ import platform
 #
 import cv2
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 #
@@ -105,7 +106,15 @@ def show_images(images, cmap=None, channels=False):
     plt.show()
 
  
-def show_hls_channels(self, hls_frame):
+def show_hls_channels(hls_frame):
     cv2.imshow('hue', hls_frame[:, :, 0])
     cv2.imshow('lightness', hls_frame[:, :, 1])
     cv2.imshow('saturation', hls_frame[:, :, 2])
+
+def save_load_np_var(filename, data = None, save = True):
+    path = os.path.join('roi', filename + '.npy')
+    if save: 
+        np.save(path, data)
+        return True
+    else:
+        return np.load(path)

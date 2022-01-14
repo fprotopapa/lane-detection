@@ -9,8 +9,6 @@
 #
 # ########################################################
 #
-# Default ROI
-default_vertices = [(360, 630), (568, 499), (847, 494), (1017, 623)]
 # White color mask threshold
 white_lower = [0, 210, 0]
 white_upper = [255, 255, 255]
@@ -31,9 +29,8 @@ n_windows = 9
 margin = 100
 nb_margin = 100
 px_threshold = 50
-radii_threshold = 10
+radii_threshold = 6
 # Conversion pixel to meter
-convert_to_meter = True
 px_to_m_y = 30/720 # meters per pixel in y dimension
 px_to_m_x = 3.7/700 # meters per pixel in x dimension
 # Lanes and poly
