@@ -25,18 +25,18 @@ lane_thickness = 30
 width = 1280
 height = 720
 # Sliding window
-n_windows = 9
-margin = 100
-nb_margin = 100
-px_threshold = 50
+n_windows = 12
+margin = 200
+nb_margin = 150
+px_threshold = 70
 radii_threshold = 6
 # Conversion pixel to meter
 px_to_m_y = 30/720 # meters per pixel in y dimension
 px_to_m_x = 3.7/700 # meters per pixel in x dimension
 # Lanes and poly
-min_lane_dis = 600
-poly_thr_a = 0.001
-poly_thr_b = 0.4
-poly_thr_c = 150
+min_lane_dis = 500
+poly_thr_a = 0.005
+poly_thr_b = 0.8
+poly_thr_c = 180
 # Average
-queue_len = 20
+queue_len = 10
