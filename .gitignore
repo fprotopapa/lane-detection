@@ -3,6 +3,7 @@ input_video/
 input_image/
 test_image/
 **/roi/*.npy
+explore-data/
 
 # Stuff to ignore
 ignore/
