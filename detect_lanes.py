@@ -23,7 +23,7 @@ import lane_detection.lane_detector as det
 import lane_detection.config as cfg
 from lane_detection.get_coordinates import set_polygon
 
-DEBUG = False
+DEBUG = True
 #
 # Print Video Information, return video resolution (width, height)
 def get_video_information(cap, filename=None):
@@ -189,8 +189,8 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     sobel_frame = Ftf.apply_sobel_edge_det(blur_frame)
     filter_frame = sobel_frame
     # White color mask
-    lower = np.uint8(cfg.white_lower) # [200, 200, 200])
-    upper = np.uint8(cfg.white_upper) # [255, 255, 255])
+    lower = np.uint8(cfg.white_lower) 
+    upper = np.uint8(cfg.white_upper) 
     white_mask = Ftf.create_mask(bright_frame, (lower, upper))
     # Yellow color mask
     lower = np.uint8(cfg.yellow_lower)
@@ -198,8 +198,7 @@ def process_lane_detection(bgr_frame, mtx, dist, Ftf, filename):
     yellow_mask = Ftf.create_mask(hls_frame, (lower, upper))
     # Combine the mask
     comb_mask = Ftf.combine_frames(white_mask, yellow_mask)
-    intersect = Ftf.intersect_mask(comb_mask, filter_frame)
-    # ToDo average, curve prediction       
+    intersect = Ftf.intersect_mask(comb_mask, filter_frame)       
     # Draw lanes
     lanes, avg_rad = Detector.find_lanes(intersect)
 
@@ -312,7 +311,6 @@ if __name__ == "__main__":
     # Sliding window
     Detector.n_windows = cfg.n_windows
     Detector.margin = cfg.margin
-    Detector.nb_margin = cfg.nb_margin
     Detector.nb_margin = cfg.nb_margin
     Detector.radii_threshold = cfg.radii_threshold
     # Conversion pixel to meter

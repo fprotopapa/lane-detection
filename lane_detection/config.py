@@ -28,7 +28,6 @@ height = 720
 n_windows = 12
 margin = 200
 nb_margin = 150
-px_threshold = 70
 radii_threshold = 6
 # Conversion pixel to meter
 px_to_m_y = 30/720 # meters per pixel in y dimension
