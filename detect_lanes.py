@@ -23,7 +23,7 @@ import lane_detection.lane_detector as det
 import lane_detection.config as cfg
 from lane_detection.get_coordinates import set_polygon
 
-DEBUG = True
+DEBUG = False
 #
 # Print Video Information, return video resolution (width, height)
 def get_video_information(cap, filename=None):
