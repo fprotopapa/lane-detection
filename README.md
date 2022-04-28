@@ -2,6 +2,17 @@
 
 ## Description
 
+Lane detection with conventional computer vision techniques using OpenCV.
+
+## Examples
+
+![Detected Lanes_1](output.png)
+![Detected Lanes_2](output_2.png)
+
+## ToDo
+
+- [ ] Skip Frames to increase FPS
+
 ## Installation
 
 ```
@@ -12,7 +23,7 @@ Python 3.8.12
 OpenCV 4.0.1
 ```
 
-## Example
+## Run
 
 Run code:
 
